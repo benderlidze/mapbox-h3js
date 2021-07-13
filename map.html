@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document</title>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.3.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.3.0/mapbox-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@5/turf.min.js"></script>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <script src="https://unpkg.com/h3-js"></script>
+
+  <style>
+    * {
+      padding: 0;
+      margin: 0;
+    }
+
+    #map {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 100%;
+      font-family: 'Open Sans', sans-serif !important;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: 'Open Sans', sans-serif !important;
+    }
+
+    .mapboxgl-popup-content {
+      min-width: 200px;
+
+    }
+
+    /* ACCORDION PART  */
+    .accordion {
+      background-color: #74a3b4;
+      color: white;
+      cursor: pointer;
+      padding: 10px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      transition: 0.4s;
+    }
+
+    .active,
+    .accordion:hover {
+      background-color: #32839a;
+    }
+
+    .accordion:after {
+      content: '\002B';
+      color: white;
+      font-weight: bold;
+      float: right;
+      margin-left: 5px;
+    }
+
+    .active:after {
+      content: "\2212";
+    }
+
+    .panel {
+      background-color: white;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.2s ease-out;
+    }
+
+    .panel p {
+      padding: 10px;
+    }
+
+    #accordionMenu {
+      position: absolute;
+      z-index: 1000;
+      top: 20px;
+      left: 20px;
+      max-width: 300px;
+
+    }
+
+    .clinicItem {
+      background-color: white;
+      padding: 8px;
+      cursor: pointer;
+    }
+
+    .clinicItem:hover {
+      background-color: rgb(238, 238, 238);
+      padding: 8px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="map"></div>
+  <div id="accordionMenu"></div>
+
+  <script>
+
+
+    var accrd = document.getElementById('acc');
+    var filterGroup = document.getElementById('filter-group');
+    var zoom = document.getElementById('zoom');
+    const categories = [];
+    const sData = {};
+    let dataReady = false;
+    let mapReady = false;
+    const pinsData = [];
+    const filtersDiv = document.querySelector("#filters");
+    const toggleButton = document.querySelector("#toggle");
+
+
+    mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2Vsb2trZW4iLCJhIjoiY2twN2pia2o2MDBwdTJ1bW50N2I2MGZpeiJ9.q3vF6As9mDEAI8Na2UmtXg';
+    var map = (window.map = new mapboxgl.Map({
+      container: 'map',
+      zoom: 9,
+      center: { lng: 144.93587958566792, lat: -38.000470141582596 },
+      style: 'mapbox://styles/mapbox/light-v10',
+      antialias: true // create the gl context with MSAA antialiasing, so custom layers are antialiased
+    }));
+    map.addControl(new mapboxgl.NavigationControl());
+
+    let counter = 0;
+
+    map.on('load', function () {
+
+      d3.csv('data/Food places.csv').then(data => {
+        console.log(data);
+
+        const pins = data.map(i => {
+          return turf.point([+i.Longitude, +i.Latitude], { ...i });
+        })
+
+        const collection = turf.featureCollection(pins)
+        map.getSource('pins').setData(collection)
+
+
+
+        //h3 part 
+        const bbox = map.getBounds().toArray().flat();
+        const poly = turf.bboxPolygon(bbox);
+        const coordinates = poly.geometry.coordinates[0]
+        console.log('coordinates: ', coordinates);
+        const reverse = JSON.parse(JSON.stringify(coordinates))
+        const d = reverse.map(i => i.reverse())
+        console.log(d);
+        const h3list = h3.polyfill(d, 6);
+        console.log('h3list: ', h3list);
+        const h3geometry = h3list.map(i => {
+          const g = h3.h3ToGeoBoundary(i, true)
+          return turf.polygon([g], { name: 'poly1' });
+        })
+        const h3collection = turf.featureCollection(h3geometry)
+        map.getSource('h3').setData(h3collection);
+        console.log(h3geometry);
+      })
+
+      map.addSource('pins', {
+        "type": "geojson",
+        "data": {
+          "type": "FeatureCollection",
+          "features": []
+        }
+      });
+      // map.addLayer({
+      //   'id': 'icon',
+      //   'source': 'pins',
+      //   'type': 'symbol',
+      //   'layout': {
+      //     'icon-image': ['get', 'icon'],
+      //     'icon-rotation-alignment': 'map',
+      //     'icon-allow-overlap': true,
+      //     'icon-ignore-placement': true
+      //   }
+      // });
+
+
+      map.addLayer({
+        'id': 'population',
+        'type': 'circle',
+        'source': 'pins',
+        'paint': {
+          'circle-radius': 3,
+          'circle-color': 'red'
+        }
+      });
+
+      map.addSource('h3', {
+        "type": "geojson",
+        "data": {
+          "type": "FeatureCollection",
+          "features": []
+        }
+      });
+      // Add a new layer to visualize the polygon.
+      map.addLayer({
+        'id': 'maine',
+        'type': 'fill',
+        'source': 'h3', // reference the data source
+        'layout': {},
+        'paint': {
+          'fill-color': '#0080ff', // blue color fill
+          'fill-opacity': 0.5
+        }
+      });
+
+      map.on('click', 'icon', function (e) {
+
+        var coordinates = e.features[0].geometry.coordinates.slice();
+        var features = map.queryRenderedFeatures(map.project(coordinates), { layers: ['icon'] });
+        var info = e.features[0].properties;
+
+      });
+      map.on('mouseenter', 'icon', function () {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'icon', function () {
+        map.getCanvas().style.cursor = '';
+      });
+      mapReady = true;
+
+    });
+
+  </script>
+
+</body>
+
+</html>
